@@ -13,18 +13,39 @@ export default function App() {
 
   return (
     <Router>
-      <div className="flex flex-col min-h-screen">
+      <div className="flex flex-col min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
+        {/* Header */}
         <Header />
-        <main className="flex-grow p-4">
+
+        {/* Main Content */}
+        <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Routes>
-            <Route path="/" element={<QuizSelection setQuizConfig={setQuizConfig} />} />
+            <Route
+              path="/"
+              element={
+                <QuizSelection
+                  setQuizConfig={setQuizConfig}
+                />
+              }
+            />
             <Route
               path="/quiz"
-              element={<Quiz quizConfig={quizConfig} setScore={setScore} setAnswers={setAnswers} />}
+              element={
+                <Quiz
+                  quizConfig={quizConfig}
+                  setScore={setScore}
+                  setAnswers={setAnswers}
+                />
+              }
             />
-            <Route path="/results" element={<Results score={score} answers={answers} />} />
+            <Route
+              path="/results"
+              element={<Results score={score} answers={answers} />}
+            />
           </Routes>
         </main>
+
+        {/* Footer */}
         <Footer />
       </div>
     </Router>
