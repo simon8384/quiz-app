@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-export default function Quiz({ quizConfig, setScore, setAnswers }) {
+export default function Quiz({ quizConfig, setScore, setAnswers, onComplete }) {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
@@ -10,69 +9,122 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Utility: shuffle answers
+  const shuffle = (array) => array.sort(() => Math.random() - 0.5);
+
+  // Utility: decode HTML entities
+  const decodeHtml = (text) => {
+    const el = document.createElement("textarea");
+    el.innerHTML = text;
+    return el.value;
+  };
+
+  // Get or request OpenTDB session token
+  const fetchToken = async () => {
+    const storedToken = localStorage.getItem("opentdbToken");
+    if (storedToken) return storedToken;
+
+    try {
+      const res = await fetch(
+        "https://opentdb.com/api_token.php?command=request"
+      );
+      const data = await res.json();
+      if (data.response_code === 0 && data.token) {
+        localStorage.setItem("opentdbToken", data.token);
+        return data.token;
+      } else {
+        throw new Error("Failed to get session token");
+      }
+    } catch (err) {
+      console.error("Token fetch failed:", err);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (!quizConfig) return;
 
     const fetchQuestions = async () => {
       setLoading(true);
       setError("");
+
       try {
         const category = quizConfig.category || 9;
         const difficulty = quizConfig.difficulty || "medium";
         const amount = quizConfig.numQuestions || 10;
 
-        const url = `https://opentdb.com/api.php?amount=${amount}&category=${category}&difficulty=${difficulty}&type=multiple`;
-        const res = await fetch(url);
+        const token = await fetchToken();
+        let url = `https://opentdb.com/api.php?amount=${amount}&category=${category}&difficulty=${difficulty}&type=multiple`;
+        if (token) url += `&token=${token}`;
 
-        // Handle 429 or other non-ok responses
-        if (!res.ok) {
-          if (res.status === 429) {
-            throw new Error(
-              "Too many requests. Please wait a moment and try again."
-            );
-          } else {
-            throw new Error(`Network response was not ok (${res.status})`);
-          }
-        }
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Network response was not ok (${res.status})`);
 
         const data = await res.json();
 
-        if (!data.results || data.results.length === 0)
-          throw new Error("No questions available for this configuration");
+        if (data.response_code === 4) {
+          localStorage.removeItem("opentdbToken");
+          return fetchQuestions();
+        }
+
+        if (!data.results || data.results.length === 0) {
+          throw new Error("No questions available from API");
+        }
 
         const formatted = data.results.map((q) => ({
           ...q,
+          difficulty: q.difficulty || "medium",
           answers: shuffle([...q.incorrect_answers, q.correct_answer]),
         }));
 
         setQuestions(formatted);
       } catch (err) {
-        console.error(err);
+        console.warn("API failed, using fallback questions:", err);
+        setError("API limit reached or server unavailable. Using fallback questions.");
 
-        // Fallback to mock questions if API fails (development friendly)
-        const fallbackQuestions = [
+        const fallbackPool = [
           {
-            category: "General Knowledge",
-            type: "multiple",
-            difficulty: "medium",
             question: "What is the capital of France?",
             correct_answer: "Paris",
             incorrect_answers: ["London", "Berlin", "Madrid"],
-            answers: shuffle(["Paris", "London", "Berlin", "Madrid"]),
+            difficulty: "medium",
           },
           {
-            category: "Science & Nature",
-            type: "multiple",
-            difficulty: "medium",
             question: "What planet is known as the Red Planet?",
             correct_answer: "Mars",
             incorrect_answers: ["Venus", "Jupiter", "Saturn"],
-            answers: shuffle(["Mars", "Venus", "Jupiter", "Saturn"]),
+            difficulty: "medium",
+          },
+          {
+            question: "Who wrote 'Romeo and Juliet'?",
+            correct_answer: "William Shakespeare",
+            incorrect_answers: ["Charles Dickens", "Leo Tolstoy", "Mark Twain"],
+            difficulty: "medium",
+          },
+          {
+            question: "What is H2O commonly known as?",
+            correct_answer: "Water",
+            incorrect_answers: ["Oxygen", "Hydrogen", "Salt"],
+            difficulty: "medium",
+          },
+          {
+            question: "Which element has the chemical symbol 'Au'?",
+            correct_answer: "Gold",
+            incorrect_answers: ["Silver", "Oxygen", "Iron"],
+            difficulty: "medium",
           },
         ];
 
-        setQuestions(fallbackQuestions);
-        setError(err.message || "Failed to load questions. Using fallback.");
+        const selected = [];
+        for (let i = 0; i < (quizConfig.numQuestions || 10); i++) {
+          const q = fallbackPool[i % fallbackPool.length];
+          selected.push({
+            ...q,
+            answers: shuffle([...q.incorrect_answers, q.correct_answer]),
+          });
+        }
+
+        setQuestions(selected);
       } finally {
         setLoading(false);
       }
@@ -80,14 +132,6 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
 
     fetchQuestions();
   }, [quizConfig]);
-
-  const shuffle = (array) => array.sort(() => Math.random() - 0.5);
-
-  const decodeHtml = (text) => {
-    const el = document.createElement("textarea");
-    el.innerHTML = text;
-    return el.value;
-  };
 
   const handleAnswer = (answer) => {
     if (showAnswer) return;
@@ -109,6 +153,11 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
   };
 
   const handleNext = () => {
+    if (currentIndex + 1 >= questions.length) {
+      // Quiz finished
+      if (onComplete) onComplete();
+      return;
+    }
     setCurrentIndex((prev) => prev + 1);
     setSelectedAnswer(null);
     setShowAnswer(false);
@@ -121,24 +170,10 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
       </div>
     );
 
-  if (error)
+  if (!questions || questions.length === 0)
     return (
-      <div className="max-w-2xl mx-auto px-6 py-8">
-        <div className="bg-white rounded-xl shadow-lg p-6 text-center">
-          <XCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
-          <p className="text-red-600">{error}</p>
-        </div>
-      </div>
-    );
-
-  if (currentIndex >= questions.length)
-    return (
-      <div className="p-6 text-center">
-        <Link to="/results">
-          <button className="bg-blue-600 text-white px-6 py-2 rounded-xl shadow-lg hover:bg-blue-700 transition">
-            See Results
-          </button>
-        </Link>
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-gray-600 text-lg">No questions available.</p>
       </div>
     );
 
@@ -147,6 +182,12 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-8">
+      {error && (
+        <div className="mb-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-2 rounded">
+          {error}
+        </div>
+      )}
+
       {/* Progress */}
       <div className="mb-4">
         <div className="flex justify-between mb-1 text-gray-600 text-sm">
@@ -197,16 +238,14 @@ export default function Quiz({ quizConfig, setScore, setAnswers }) {
           })}
         </div>
 
-        {/* Next / Show Answer */}
+        {/* Next / Finish Button */}
         <div className="flex justify-end mt-4">
           {showAnswer && (
             <button
               onClick={handleNext}
               className="bg-indigo-600 text-white px-5 py-2 rounded-xl shadow-lg hover:bg-indigo-700 transition"
             >
-              {currentIndex < questions.length - 1
-                ? "Next Question"
-                : "View Results"}
+              {currentIndex + 1 < questions.length ? "Next Question" : "Finish Quiz"}
             </button>
           )}
         </div>

@@ -5,9 +5,9 @@ export default function Header({ onReset, showReset = false }) {
     <header className="w-full bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
       <div className="flex items-center justify-between max-w-4xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center">
+          <a href="/" className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold">Q</span>
-          </div>
+          </a>
           <h1 className="text-black text-lg font-bold">Quiz Master</h1>
         </div>
         {showReset && (
